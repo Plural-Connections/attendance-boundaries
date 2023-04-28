@@ -1,0 +1,339 @@
+---
+title: "Rezoning simulation outputs"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r message=FALSE, warning=FALSE}
+source('imports.R')
+```
+
+## Preliminary setup
+### Helper functions
+```{r message=FALSE, warning=FALSE}
+source('helper_functions.R')
+```
+
+### Set results dir
+```{r message=FALSE, warning=FALSE}
+data_dir_root_dissim <- "../data/prepped_csvs_for_analysis/simulation_outputs/2122_top_100_dissim_longer/"
+sim_root_dir_dissim <- "../simulation_outputs/2122_top_100_dissim_longer/2122"
+data_dir_root_norm_exp <- "../data/prepped_csvs_for_analysis/simulation_outputs/2122_top_100_norm_exp/"
+sim_root_dir_norm_exp <- "../simulation_outputs/2122_top_100_norm_exp/2122"
+data_dir_root_gini <- "../data/prepped_csvs_for_analysis/simulation_outputs/2122_top_100_gini/"
+sim_root_dir_gini <- "../simulation_outputs/2122_top_100_gini/2122"
+```
+
+### Load metadata about districts
+```{r message=FALSE, warning=FALSE}
+# Just using the data dir root folder here to identify states, so doesn't matter which one we use
+df_dist_metadata <- get_district_metadata(data_dir_root_dissim)
+```
+
+
+### Get main df after combining all district files into one
+```{r message=FALSE, warning=FALSE}
+df_dissim <- get_main_df(df_dist_metadata, data_dir_root_dissim)
+df_norm_exp <- get_main_df(df_dist_metadata, data_dir_root_norm_exp)
+df_gini <- get_main_df(df_dist_metadata, data_dir_root_gini)
+```
+
+## Analysis
+
+#### Identify the best solver configuration per district for a given outcome measure of interest
+```{r message=FALSE, warning=FALSE}
+opt_cats <-  c("white")
+df_best_dissim <- get_best_configs(df_dissim, opt_cats, 'total_segregation_diff')
+df_best_norm_exp <- get_best_configs(df_norm_exp, opt_cats, 'total_normalized_exposure_diff')
+
+# Note: many of the gini simulations didn't complete correctly due to performance reasons, so we'll use the dissim opt ones here instead
+df_best_gini <- get_best_configs(df_dissim, opt_cats, 'total_gini_diff')
+```
+
+### Fig 2
+```{r message=FALSE, warning=FALSE, fig.width=14, fig.height=10}
+# outcome_string <- paste(baseline_outcome, 'diff', sep = "_")
+df_sq <- df_norm_exp %>% filter(config == 'status_quo_zoning')
+
+### Histograms
+curr_cat <- 'white'
+df_best_white_dissim <- df_best_dissim %>% filter(cat_best_for == curr_cat)
+baseline_outcome <- 'total_segregation'
+p_white_change_hist_dissim <- compute_seg_histogram(df_sq, baseline_outcome, curr_cat, 'Dissimilarity', df_post=df_best_white_dissim, post_outcome=baseline_outcome)
+
+df_best_white_norm_exp <- df_best_norm_exp %>% filter(cat_best_for == curr_cat)
+baseline_outcome <- 'total_normalized_exposure'
+p_white_change_hist_norm_exp <- compute_seg_histogram(df_sq, baseline_outcome, curr_cat, 'Variance Ratio', df_post=df_best_white_norm_exp, post_outcome=baseline_outcome)
+
+df_best_white_gini <- df_best_gini %>% filter(cat_best_for == curr_cat)
+baseline_outcome <- 'total_gini'
+p_white_change_hist_gini <- compute_seg_histogram(df_sq, baseline_outcome, curr_cat, 'Gini', df_post=df_best_white_gini, post_outcome=baseline_outcome)
+
+### Scatterplots
+
+dissim_df <- df_best_white_dissim[c('district_id', 'white_total_segregation', 'white_total_segregation_diff', 'white_total_segregation_change', 'total_enrollment_in_district', 'urbanicity')]
+norm_exp_df <- df_best_white_norm_exp[c('district_id', 'white_total_normalized_exposure', 'white_total_normalized_exposure_diff', 'white_total_normalized_exposure_change', 'total_enrollment_in_district', 'urbanicity')]
+gini_df <- df_best_white_gini[c('district_id', 'white_total_gini', 'white_total_gini_diff', 'white_total_gini_change', 'total_enrollment_in_district', 'urbanicity')]
+
+df_for_bubble_dissim_norm_exp <-
+  dissim_df %>% left_join(norm_exp_df, by = 'district_id')
+df_for_bubble_dissim_norm_exp$white_total_normalized_exposure_change <- 100 * df_for_bubble_dissim_norm_exp$white_total_normalized_exposure_change
+df_for_bubble_dissim_norm_exp$white_total_segregation_change <- 100 * df_for_bubble_dissim_norm_exp$white_total_segregation_change
+colnames(df_for_bubble_dissim_norm_exp)[colnames(df_for_bubble_dissim_norm_exp) == "urbanicity.x"] ="urbanicity"
+colnames(df_for_bubble_dissim_norm_exp)[colnames(df_for_bubble_dissim_norm_exp) == "total_enrollment_in_district.x"] ="total_enrollment_in_district"
+p_white_change_bubble_dissim_norm_exp <- compute_bubble_chart(df_for_bubble_dissim_norm_exp, "white_total_segregation_change", "white_total_normalized_exposure_change", 'total_enrollment_in_district', 'urbanicity', "% change Dissimilarity", "% change Variance Ratio", "Dissimilarity vs. Variance Ratio", show_correlation = T)
+
+df_for_bubble_dissim_gini <-
+  dissim_df %>% left_join(gini_df, by = 'district_id')
+df_for_bubble_dissim_gini$white_total_gini_change <- 100 * df_for_bubble_dissim_gini$white_total_gini_change
+df_for_bubble_dissim_gini$white_total_segregation_change <- 100 * df_for_bubble_dissim_gini$white_total_segregation_change
+colnames(df_for_bubble_dissim_gini)[colnames(df_for_bubble_dissim_gini) == "urbanicity.x"] ="urbanicity"
+colnames(df_for_bubble_dissim_gini)[colnames(df_for_bubble_dissim_gini) == "total_enrollment_in_district.x"] ="total_enrollment_in_district"
+p_white_change_bubble_dissim_gini <- compute_bubble_chart(df_for_bubble_dissim_gini, "white_total_segregation_change", "white_total_gini_change", 'total_enrollment_in_district', 'urbanicity', "% change Dissimilarity", "% change Gini", "Dissimilarity vs. Gini", show_correlation = T)
+
+df_for_bubble_norm_exp_gini <-
+  norm_exp_df %>% left_join(gini_df, by = 'district_id')
+df_for_bubble_norm_exp_gini$white_total_gini_change <- 100 * df_for_bubble_norm_exp_gini$white_total_gini_change
+df_for_bubble_norm_exp_gini$white_total_normalized_exposure_change <- 100 * df_for_bubble_norm_exp_gini$white_total_normalized_exposure_change
+colnames(df_for_bubble_norm_exp_gini)[colnames(df_for_bubble_norm_exp_gini) == "urbanicity.x"] ="urbanicity"
+colnames(df_for_bubble_norm_exp_gini)[colnames(df_for_bubble_norm_exp_gini) == "total_enrollment_in_district.x"] ="total_enrollment_in_district"
+p_white_change_bubble_norm_exp_gini <- compute_bubble_chart(df_for_bubble_norm_exp_gini, "white_total_normalized_exposure_change", "white_total_gini_change", 'total_enrollment_in_district', 'urbanicity', "% change Variance Ratio", "% change Gini", "Variance Ratio vs. Gini", show_correlation = T)
+
+
+### Bringing it all together
+fig2 <- (p_white_change_hist_dissim + p_white_change_hist_norm_exp + p_white_change_hist_gini) / (p_white_change_bubble_dissim_norm_exp + p_white_change_bubble_dissim_gini + p_white_change_bubble_norm_exp_gini) + 
+  plot_layout(
+    # heights = c(4, 4, 4),
+    # heights = c(4, 4),
+    guides = 'collect',
+    ncol = 1
+  ) +
+  plot_annotation(
+    # title = '"Best case scenario" simulation outcomes across school districts',
+    theme = theme(plot.title = element_text(size = 14)),
+    tag_levels = 'a',
+    tag_suffix = ')'
+  ) &
+  theme(plot.tag = element_text(size = 12), plot.title = element_text(size = 14))
+fig2
+
+# p_white_hist <- compute_seg_histogram(df_sq, baseline_outcome, 'white')
+# p_white_hist
+```
+
+#### Try to get a sense of which district features are predictive of larger differences between 
+```{r message=FALSE, warning=FALSE}
+df_seg <- read.csv('../data/school_covariates/top_0_100_largest_districts_updated.csv')
+df_seg$leaid <- str_pad(as.character(df_seg$leaid), 7, pad="0")
+df_seg <- df_dist_metadata %>% left_join(df_seg, by = "leaid")
+df_seg$white_dissim_norm_diff <- df_seg$white_dissim - df_seg$white_norm_exp
+df_seg$white_gini_norm_diff <- df_seg$white_gini - df_seg$white_norm_exp
+cor.test(df_seg$white_dissim_norm_diff, 1-df_seg$district_perwht)
+cor.test(df_seg$white_gini_norm_diff, 1-df_seg$district_perwht)
+```
+### Fig 3
+
+#### Compute metrics for the best configurations for each district (Figure 3)
+```{r message=FALSE, warning=FALSE, fig.width=14, fig.height=10}
+# outcome_cats <- c('black', 'ell', 'frl', 'hisp', 'white')
+df_sq <- df_norm_exp %>% filter(config == 'status_quo_zoning')
+outcome_cats <- c('asian', 'black', 'hisp', 'native', 'white')
+
+curr_cat <- 'white'
+baseline_outcome <- 'total_normalized_exposure'
+curr_outcome_string <- paste(curr_cat, baseline_outcome, sep="_")
+outcome_string <- 'total_normalized_exposure_diff'
+
+# White bubble chart
+df_best_white_norm_exp$rezoned_target_outcome <- round(df_best_white_norm_exp[[curr_outcome_string]], 2)
+df_sq$orig_target_outcome <- round(df_sq[[curr_outcome_string]], 2)
+df_sq <- df_sq[c("district_id", 'orig_target_outcome')]
+df_for_bubble <-
+  df_best_white_norm_exp %>% left_join(df_sq, by = 'district_id')
+p_white_change_bubble <- compute_bubble_chart(df_for_bubble, "orig_target_outcome", "rezoned_target_outcome", 'total_enrollment_in_district', 'urbanicity', "White seg. before rezoning", "White seg. after rezoning", "White segregation (by district)", show_median_change=T)
+
+p_seg <-
+  compute_barplots_of_outcomes_best_configs(
+    df_best_white_norm_exp,
+    opt_cats,
+    outcome_cats, 
+    outcome_string
+  )
+
+
+p_rezoned <-
+  compute_barplots_of_outcomes_best_configs(
+    df_best_white_norm_exp,
+    opt_cats,
+    outcome_cats, 
+    'percent_rezoned'
+  )
+
+p_travel_for_rezoned_mins <-
+  compute_barplots_of_outcomes_best_configs(
+    df_best_white_norm_exp,
+    opt_cats,
+    outcome_cats,
+    'total_travel_time_for_rezoned_diff'
+  )
+
+fig3 <-
+  (
+    (p_white_change_bubble | p_seg) / 
+    (p_rezoned | p_travel_for_rezoned_mins)
+  )  + 
+  plot_layout(
+    # heights = c(4, 4, 4),
+    heights = c(4, 4),
+    guides = 'collect',
+    ncol = 1
+  ) +
+  plot_annotation(
+    # title = '"Best case scenario" simulation outcomes across school districts',
+    theme = theme(plot.title = element_text(size = 14)),
+    tag_levels = 'a',
+    tag_suffix = ')'
+  ) &
+  theme(plot.tag = element_text(size = 12), plot.title = element_text(size = 14))
+
+# Correlation between change in segregation and urbanicity
+summary(lm(white_total_normalized_exposure_change ~ urbanicity, data=df_best_white_norm_exp))
+
+# Correlation between change in segregation and district size
+cor.test(df_best_white_norm_exp$white_total_normalized_exposure_change, df_best_white_norm_exp$total_enrollment_in_district, method='spearman')
+
+# Correlation between change in segregation and original segregation value
+cor.test(df_best_white_norm_exp$white_total_normalized_exposure_change, df_best_white_norm_exp$white_total_normalized_exposure - df_best_white_norm_exp$white_total_segregation_diff, method='spearman')
+
+summary(lm(white_total_normalized_exposure_change ~ urbanicity + total_enrollment_in_district +(white_total_normalized_exposure - white_total_segregation_diff) , data=df_best_white_norm_exp))
+fig3
+
+```
+
+#### Choice analysis
+```{r message=FALSE, warning=FALSE}
+df_choice <- read.csv('../data/school_covariates/school_choice_analysis.csv')
+df_choice$leaid <- str_pad(as.character(df_choice$leaid), 7, pad="0")
+df_choice <- df_choice %>% filter(leaid %in% df_best_norm_exp$district_id)
+median(df_choice$ratio_c_or_m_to_dist_enroll)
+max(df_choice$ratio_c_or_m_to_dist_enroll)
+min(df_choice$ratio_c_or_m_to_dist_enroll)
+median(df_choice$ratio_c_or_m_to_dist_white)
+median(df_choice$ratio_c_or_m_to_dist_non_white)
+sum(df_choice$ratio_c_or_m_to_dist_white > df_choice$ratio_c_or_m_to_dist_non_white)
+```
+### Figure 4 - sensitivity analyses
+```{r message=FALSE, warning=FALSE, fig.width=12, fig.height=8}
+
+data_dir_root_norm_exp_sen <- "../data/prepped_csvs_for_analysis/simulation_outputs/2122_top_100_norm_exp_sensitivity/"
+df_norm_exp_sensitivity <- get_main_df(df_dist_metadata, data_dir_root_norm_exp_sen)
+plots <- get_sensitivity_plots(df_norm_exp_sensitivity,
+                               opt_cats,
+                               'total_normalized_exposure_change',
+                               c(0.25, .5, .75, 1, 1.5, 2),
+                               c(T, F))
+# Plot a -> two lines: change in seg as we change travel times, with and without contiguity (hold school size increase fixed)
+
+# Plot b -> two lines: change in travel times as we change travel times, with and without contiguity (hold school size increase fixed)
+
+# Plot c -> two lines: % students rezoned as we change travel times, with and without contiguity (hold school size increase fixed)
+
+# Plot d -> What happens to segregation when we have "light" opt-out
+# df_sq <- df_norm_exp %>% filter(config == 'status_quo_zoning')
+# df_sq$orig_target_outcome <- round(df_sq$white_total_normalized_exposure, 2)
+# df_sq <- df_sq[c("district_id", 'orig_target_outcome')]
+# df_for_bubble <-
+#   df_best_white_norm_exp %>% left_join(df_sq, by = 'district_id')
+df_best_white_norm_exp$rezoned_target_outcome <- round(df_best_white_norm_exp$white_total_normalized_exposure_choice_0.5, 2)
+df_pre_choice <- df_best_white_norm_exp
+df_pre_choice$orig_target_outcome <- round(df_best_white_norm_exp$white_total_normalized_exposure, 2)
+df_pre_choice <- df_pre_choice[c('district_id', 'orig_target_outcome')]
+df_for_bubble <-
+  df_best_white_norm_exp %>% left_join(df_pre_choice, by = 'district_id')
+p_white_change_bubble_choice_low <- compute_bubble_chart(df_for_bubble, "orig_target_outcome", "rezoned_target_outcome", 'total_enrollment_in_district', 'urbanicity', "White seg. post-rezoning, no choice", "White seg. post-rezoning, lower choice", "Est. segregation under \"lower choice\"")
+
+
+
+# Plot e -> What happens to segregation when we have "heavy" opt-out
+# df_sq <- df_norm_exp %>% filter(config == 'status_quo_zoning')
+# df_sq$orig_target_outcome <- round(df_sq$white_total_normalized_exposure, 2)
+# df_sq <- df_sq[c("district_id", 'orig_target_outcome')]
+# df_for_bubble <-
+#   df_best_white_norm_exp %>% left_join(df_sq, by = 'district_id')
+df_best_white_norm_exp$rezoned_target_outcome <- round(df_best_white_norm_exp$white_total_normalized_exposure_choice_1, 2)
+df_pre_choice <- df_best_white_norm_exp
+df_pre_choice$orig_target_outcome <- round(df_best_white_norm_exp$white_total_normalized_exposure, 2)
+df_pre_choice <- df_pre_choice[c('district_id', 'orig_target_outcome')]
+df_for_bubble <-
+  df_best_white_norm_exp %>% left_join(df_pre_choice, by = 'district_id')
+p_white_change_bubble_choice_high <- compute_bubble_chart(df_for_bubble, "orig_target_outcome", "rezoned_target_outcome", 'total_enrollment_in_district', 'urbanicity', "White seg. post-rezoning, no choice", "White seg. post-rezoning, higher choice", "Est. segregation under \"higher choice\"")
+
+
+fig4 <-   (plots / (
+  p_white_change_bubble_choice_low | p_white_change_bubble_choice_high
+))  +
+  plot_layout(# heights = c(4, 4, 4),
+    guides = 'collect',) +
+  plot_annotation(
+    # title = '"Best case scenario" simulation outcomes across school districts',
+    theme = theme(plot.title = element_text(size = 14)),
+    tag_levels = 'a',
+    tag_suffix = ')'
+  ) &
+  theme(plot.tag = element_text(size = 12),
+        plot.title = element_text(size = 14))
+
+fig4
+
+```
+
+## Identifying districts with greatest and closest-to-median change in white segregation
+```{r message=FALSE, warning=FALSE}
+df_seg <- read.csv('../data/school_covariates/top_0_100_largest_districts_updated.csv')
+df_seg$leaid <- str_pad(as.character(df_seg$leaid), 7, pad="0")
+white_ind_max <- which.max(df_seg$white_norm_exp)
+district_id_white_max <- df_seg$leaid[white_ind_max]
+
+white_ind_med <- which.min(abs(df_seg$white_norm_exp - median(df_seg$white_norm_exp)))
+district_id_white_median <- df_seg$leaid[white_ind_med]
+white_ind_most <- which.min(df_best_white_norm_exp$white_total_normalized_exposure_diff)
+
+# district_id_white_max <- df_best_white$district_id[white_ind_most]
+# white_ind_med <- which.min(abs(df_best_white$white_total_segregation_diff - median(df_best_white$white_total_segregation_diff)))
+# 
+# district_id_white_median <- df_best_white$district_id[white_ind_med]
+
+```
+
+### Figure 5 — max seg case study
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
+p_case_study_white_max_seg <- compute_case_study_plots(district_id_white_max, 'High white segregation', df_norm_exp, df_best_norm_exp, data_dir_root_norm_exp, sim_root_dir_norm_exp)
+df_best_white_curr <- df_best_white_norm_exp %>% filter(district_id == district_id_white_max)
+df_best_white_curr$white_total_normalized_exposure_diff
+p_case_study_white_max_seg
+```
+
+### Figure 6 — median seg case study
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
+p_case_study_white_med_seg <- compute_case_study_plots(district_id_white_median, 'Median white segregation', df_norm_exp, df_best_norm_exp, data_dir_root_norm_exp, sim_root_dir_norm_exp)
+df_best_white_norm_exp <- df_best_white_norm_exp %>% filter(district_id == district_id_white_median)
+df_best_white_norm_exp$white_total_normalized_exposure_diff
+p_case_study_white_med_seg
+```
+
+# ```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
+# dist_for_case_study <- '5101890'
+# p_case_study_white_med_seg <- compute_case_study_plots(dist_for_case_study, 'White segregation', df, data_dir_root, sim_root_dir)
+# df_best_white_curr <- df_best_white %>% filter(district_id == dist_for_case_study)
+# df_best_white_curr$white_total_segregation_diff
+# p_case_study_white_med_seg
+# ```
+# 
+# ```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
+# dist_for_case_study <- '5103130'
+# p_case_study_white_med_seg <- compute_case_study_plots(dist_for_case_study, 'White segregation', df, data_dir_root, sim_root_dir)
+# df_best_white_curr <- df_best_white %>% filter(district_id == dist_for_case_study)
+# df_best_white_curr$white_total_segregation_diff
+# p_case_study_white_med_seg
+# ```

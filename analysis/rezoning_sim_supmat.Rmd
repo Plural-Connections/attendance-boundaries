@@ -1,0 +1,174 @@
+---
+title: "Rezoning simulations analysis — supplementary materials"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+source('imports.R')
+```
+
+## Preliminary setup
+### Helper functions
+```{r message=FALSE, warning=FALSE}
+source('helper_functions.R')
+```
+
+### Set results dir
+```{r message=FALSE, warning=FALSE}
+data_dir_root <- "../data/prepped_csvs_for_analysis/simulation_outputs/va_2122_contiguous/"
+sim_root_dir <- "../simulation_outputs/va_2122_contiguous/2122"
+```
+
+### Load metadata about districts
+```{r message=FALSE, warning=FALSE}
+df_dist_metadata <- get_district_metadata(data_dir_root)
+```
+
+
+### Get main df after combining all district files into one
+```{r message=FALSE, warning=FALSE}
+df <- get_main_df(df_dist_metadata, data_dir_root)
+df <- df %>% filter(cat_optimizing_for %in% c('white', ""))
+```
+
+## Analysis
+
+#### Identify the best solver configuration per district for a given outcome measure of interest
+```{r message=FALSE, warning=FALSE}
+outcome_string <- 'total_segregation_diff'
+opt_cats <-  c("white")
+df_best <- get_best_configs(df, opt_cats, outcome_string)
+```
+
+### Fig 2
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
+
+df_sq <- df %>% filter(config == 'status_quo_zoning')
+p_white_hist <- compute_dissim_histogram(df_sq, 'white')
+# p_frl_hist <- compute_dissim_histogram(df_sq, 'frl')
+
+# fig_2_plots <- (p_white_hist + p_frl_hist) +
+#   plot_annotation(
+#     # title = '"Best case scenario" simulation outcomes across school districts',
+#     theme = theme(plot.title = element_text(size = 14)),
+#     tag_levels = 'a',
+#     tag_suffix = ')'
+#   ) &
+#   theme(plot.tag = element_text(size = 12), plot.title = element_text(size = 14))
+# fig_2_plots
+p_white_hist
+```
+
+### Fig 3
+
+#### Compute metrics for the best configurations for each district (Figure 3)
+```{r message=FALSE, warning=FALSE, fig.width=14, fig.height=10}
+# outcome_cats <- c('black', 'ell', 'frl', 'hisp', 'white')
+outcome_cats <- c('asian', 'black', 'hisp', 'native', 'white')
+
+curr_cat <- 'white'
+df_best_white <- df_best %>% filter(cat_best_for == curr_cat)
+outcome_string <- 'white_total_segregation'
+
+# # White histogram
+# p_white_change_hist <- compute_dissim_histogram(df_sq, 'white', df_post=df_best_white)
+# 
+# # White bubble chart
+# p_white_change_bubble <- compute_bubble_chart(df, df_best_white, outcome_string, curr_cat)
+# 
+# # curr_cat <- 'frl'
+# # df_best_frl <- df_best %>% filter(cat_best_for == curr_cat)
+# # outcome_string <- 'frl_total_segregation'
+# # 
+# # # FRL histogram
+# # p_frl_change_hist <- compute_dissim_histogram(df_sq, 'frl', df_post=df_best_frl)
+# # 
+# # # FRL bubble chart
+# # p_frl_change_bubble <- compute_bubble_chart(df, df_best_frl, outcome_string, curr_cat)
+# 
+# p_seg <-
+#   compute_barplots_of_outcomes_best_configs(
+#     df_best,
+#     opt_cats,
+#     outcome_cats, 
+#     'total_segregation_diff'
+#   )
+# 
+# 
+# p_rezoned <-
+#   compute_barplots_of_outcomes_best_configs(
+#     df_best,
+#     opt_cats,
+#     outcome_cats, 
+#     'percent_rezoned'
+#   )
+# 
+# p_travel_for_rezoned_mins <-
+#   compute_barplots_of_outcomes_best_configs(
+#     df_best,
+#     opt_cats,
+#     outcome_cats,
+#     'total_travel_time_for_rezoned_diff'
+#   )
+# 
+# fig_3_plots <-
+#   (
+#     (p_white_change_hist | p_white_change_bubble) / 
+#     # (p_frl_change_hist | p_frl_change_bubble) / 
+#     (p_seg | p_rezoned | p_travel_for_rezoned_mins)
+#   )  + 
+#   plot_layout(
+#     # heights = c(4, 4, 4),
+#     heights = c(4, 4),
+#     guides = 'collect',
+#     ncol = 1
+#   ) +
+#   plot_annotation(
+#     # title = '"Best case scenario" simulation outcomes across school districts',
+#     theme = theme(plot.title = element_text(size = 14)),
+#     tag_levels = 'a',
+#     tag_suffix = ')'
+#   ) &
+#   theme(plot.tag = element_text(size = 12), plot.title = element_text(size = 14))
+# 
+# fig_3_plots <-
+#   wrap_labs(fig_3_plots, 'normal')
+# fig_3_plots
+# 
+# # Correlation between change in segregation and urbanicity
+# summary(lm(white_total_segregation ~ urbanicity, data=df_best_white))
+# 
+# # Correlation between change in segregation and original segregation value
+# cor.test(df_best_white$white_total_segregation_diff, df_best_white$total_enrollment_in_district, method='spearman')
+# 
+# # Correlation between change in segregation and original segregation value
+# cor.test(df_best_white$white_total_segregation_diff, df_best_white$white_total_segregation - df_best_white$white_total_segregation_diff, method='spearman')
+
+```
+Figure 3: 
+
+<!-- ## Identifying "prototypical" districts in rural, suburban, urban areas -->
+<!-- ```{r message=FALSE, warning=FALSE} -->
+<!-- district_centroids <- get_district_centroids(df) -->
+<!-- district_id_urban_centroid <- district_centroids$district_id_urban_centroid -->
+<!-- district_id_suburban_centroid <- district_centroids$district_id_suburban_centroid -->
+<!-- district_id_small_city_centroid <- district_centroids$district_id_small_city_centroid -->
+
+<!-- ``` -->
+
+
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
+dist_for_case_study <- '5101890'
+p_case_study_white_med_seg <- compute_case_study_plots(dist_for_case_study, 'White segregation', df, data_dir_root, sim_root_dir)
+df_best_white_curr <- df_best_white %>% filter(district_id == dist_for_case_study)
+df_best_white_curr$white_total_segregation_diff
+p_case_study_white_med_seg
+```
+
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
+dist_for_case_study <- '5103130'
+p_case_study_white_med_seg <- compute_case_study_plots(dist_for_case_study, 'White segregation', df, data_dir_root, sim_root_dir)
+df_best_white_curr <- df_best_white %>% filter(district_id == dist_for_case_study)
+df_best_white_curr$white_total_segregation_diff
+p_case_study_white_med_seg
+```

@@ -1,0 +1,312 @@
+---
+title: "additional_sim_analysis_code"
+output: html_document
+---
+
+# OLD
+
+### Matrix of different outcome values / metrics across all districts (conditional on solver constraints and objective functions)
+```{r message=FALSE, warning=FALSE}
+compute_matrix_of_outcomes <-
+  function(df,
+           curr_obj_fcn,
+           curr_travel,
+           curr_school_size,
+           curr_comm_cohesion,
+           opt_cats,
+           outcome_cats,
+           curr_metric,
+           curr_value,
+           key_string) {
+    M <- matrix(nrow = length(opt_cats), ncol = length(outcome_cats))
+    row_names <- c()
+    for (i in 1:length(opt_cats)) {
+      c1 <- opt_cats[i]
+      row_names <- c(row_names, c1)
+      curr_df <- df %>% filter(
+        travel_time_threshold == curr_travel,
+        school_size_threshold == curr_school_size,
+        community_cohesion_threshold == curr_comm_cohesion,
+        objective_function == curr_obj_fcn,
+        cat_optimizing_for == c1
+      )
+      curr_df[is.na(curr_df)] <- 0
+      col_names <- c()
+      for (j in 1:length(outcome_cats)) {
+        c2 <- outcome_cats[j]
+        col_names <- c(col_names, c2)
+        if (key_string != '') {
+          key = paste(c2, curr_metric, curr_value, key_string, sep = "_")
+        }
+        else {
+          key = paste(c2, curr_metric, curr_value, sep = "_")
+        }
+        
+        M[i, j] <-
+          weighted.mean(curr_df[[key]], curr_df$total_enrollment_in_district, na.rm = T)
+      }
+    }
+    rownames(M) <- opt_cats
+    colnames(M) <- outcome_cats
+    print(M)
+    longData <- melt(M)
+    p <- ggplot(longData, aes(x = X1, y = X2)) +
+      geom_raster(aes(fill = value)) +
+      geom_text(aes(label = round(value, 4))) +
+      scale_fill_gradient2(low = "green", mid="white", high = "red", midpoint=0) +
+      labs(
+        x = "Category optimizing for",
+        y = sprintf(
+          "%s perc. change in %s for category (across districts)",
+          curr_metric,
+          curr_value
+        ),
+        title =
+          sprintf(
+            "Travel threshold: %s, School size threshold: %s, Cohesion: %s, Obj. fcn: %s",
+            curr_travel,
+            curr_school_size,
+            curr_comm_cohesion,
+            curr_obj_fcn
+          )
+      ) +
+      theme_bw() + theme(
+        axis.text.x = element_text(
+          size = 9,
+          angle = 0,
+          vjust = 0.3
+        ),
+        axis.text.y = element_text(size = 9),
+        plot.title = element_text(size = 11)
+      )
+    
+    return (p)
+  }
+
+```
+
+#### H4: Seeking to minimize segregation for one category of students may lead to disproportionate increases in segregation for other categories of students
+```{r message=FALSE, warning=FALSE}
+df_richmond <- df %>% filter(district_id == 5103240)
+df_henrico = df %>% filter(district_id == 5101890)
+
+curr_value <- 'segregation'
+curr_metric <- 'median'
+curr_key <- 'change'
+opt_cats <-  c('black', 'hisp', 'frl', 'ell', 'white')
+outcome_cats <-  c('black', 'hisp', 'frl', 'ell', "white")
+
+p1 <- compute_matrix_of_outcomes(
+  df,
+  'min_max',
+  0.5,
+  0.2,
+  0,
+  opt_cats,
+  outcome_cats,
+  curr_metric,
+  curr_value,
+  curr_key
+)
+
+curr_value <- 'rezoned'
+curr_metric <- 'percent'
+curr_key <- ''
+opt_cats <-  c('black', 'hisp', 'frl', 'ell', 'white')
+outcome_cats <-  c('black', 'hisp', 'frl', 'ell', 'white')
+
+p2 <- compute_matrix_of_outcomes(
+  df_richmond,
+  'min_max',
+  0.5,
+  0.2,
+  0.5,
+  opt_cats,
+  outcome_cats,
+  curr_metric,
+  curr_value,
+  curr_key
+)
+
+curr_value <- 'travel_time'
+curr_metric <- 'total'
+curr_key <- 'change'
+opt_cats <-  c('black', 'hisp', 'frl', 'ell', 'white')
+outcome_cats <-  c('black', 'hisp', 'frl', 'ell', 'white')
+
+p3 <- compute_matrix_of_outcomes(
+  df,
+  'min_total',
+  0.5,
+  0.2,
+  0,
+  opt_cats,
+  outcome_cats,
+  curr_metric,
+  curr_value,
+  curr_key
+)
+
+
+
+```
+
+### Histograms of different outcome values / metrics across all districts (conditional on solver constraints and objective functions)
+```{r message=FALSE, warning=FALSE}
+compute_histograms_of_outcomes <- function(curr_cats,
+                                           curr_obj_fcns,
+                                           curr_travel,
+                                           curr_school_size,
+                                           curr_comm_cohesion,
+                                           curr_metrics,
+                                           curr_values,
+                                           opt_cat,
+                                           key_string) {
+  num_rows = length(travel_thresholds) * length(size_thresholds) * length(obj_fcns) * length(curr_comm_cohesion)
+  num_cols = length(metrics) * length(values)
+  par(mfrow = c(num_rows, num_cols))
+  for (c in curr_cats) {
+    for (o in curr_obj_fcns) {
+      for (t in curr_travel) {
+        for (s in curr_school_size) {
+          for (z in curr_comm_cohesion) {
+            curr_df = df %>% filter(
+              travel_time_threshold == t,
+              school_size_threshold == s,
+              objective_function == o,
+              cat_optimizing_for == opt_cat,
+              community_cohesion_threshold == z
+            )
+            curr_df[is.na(curr_df)] <- 0
+            for (m in curr_metrics) {
+              for (v in curr_values) {
+                if (key_string != '') {
+                  key = paste(c, m, v, key_string, sep = "_")
+                }
+                else {
+                  key = paste(c, m, v, sep = "_")
+                }
+                plot <-
+                  ggplot(curr_df, aes(x = eval(parse(
+                    text = key
+                  )))) +
+                  geom_histogram(binwidth = .05) +
+                  xlim(c(-1, 1)) +
+                  ggtitle(paste(
+                    paste('opt_for=', opt_cat),
+                    paste('obj_fcn=', o),
+                    paste('travel_increase=', t),
+                    paste('size_increase=', s),
+                    paste('comm_cohesion=', z),
+                    paste('weighted_average=',
+                          weighted.mean(curr_df[[key]], curr_df$total_enrollment_in_district, na.rm = T)),
+                    sep = ", "
+                  )) +
+                  xlab(paste(key)) +
+                  theme(text = element_text(size = 7))
+                print(plot)
+              }
+            }
+            
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+#### 
+
+##### Segregation values
+```{r message=FALSE, warning=FALSE}
+curr_obj_fcns <- c('min_total', 'min_max')
+curr_travel <- c(0.5)
+curr_school_size <- c(0.1)
+curr_comm_cohesion <- c(0.5)
+curr_values <- c('segregation')
+curr_metrics <- c('total')
+curr_cats <- ('black')
+compute_histograms_of_outcomes(curr_cats,
+                               curr_obj_fcns,
+                               curr_travel,
+                               curr_school_size,
+                               curr_comm_cohesion,
+                               curr_metrics,
+                               curr_values,
+                               'black',
+                               'change')
+```
+
+##### Computing matrix visualization
+```{r message=FALSE, warning=FALSE}
+compute_matrix_of_outcomes_best_configs <-
+  function(df,
+           outcome_cats,
+           outcome_string) {
+    
+    M <-
+      matrix(nrow = length(outcome_cats),
+             ncol = length(outcome_cats))
+    row_names <- c()
+    for (i in 1:length(outcome_cats)) {
+      c1 <- outcome_cats[i]
+      row_names <- c(row_names, c1)
+      curr_df <- df %>% filter(cat_best_for == c1)
+      curr_df[is.na(curr_df)] <- 0
+      for (j in 1:length(outcome_cats)) {
+        c2 <- outcome_cats[j]
+        col_name <- paste(c2, outcome_string, sep = "_")
+        
+        if (outcome_string == 'all_xexposure_prob') {
+          M[i, j] <- mean(parse_and_agg_list_entries_xexposure(curr_df, col_name), na.rm=T)
+        }
+        else if (outcome_string == 'total_travel_time_for_rezoned_change') {
+          total_diff <- sum(curr_df[[paste(c2, "total_travel_time_for_rezoned_diff", sep="_")]], na.rm=T)
+          total_orig <- sum(curr_df[[paste(c2, "total_travel_time_for_rezoned", sep="_")]], na.rm=T)
+          M[i, j] <- total_diff / total_orig
+        }
+        else if (outcome_string == 'percent_rezoned'){
+          M[i, j] <- sum(curr_df[[paste(c2, 'num_rezoned', sep = "_")]]) / sum(curr_df[[paste(c2, 'num_total', sep = "_")]])
+        }
+        else if (outcome_string == 'total_xexposure_num_diff') {
+          M[i, j] <- sum(curr_df[[col_name]])
+        }
+        
+      }
+    }
+    rownames(M) <- outcome_cats
+    colnames(M) <- outcome_cats
+    longData <- melt(M)
+    low_color <- 'red'
+    high_color <- 'green'
+    if (str_contains(outcome_string, 'percent_rezoned') ||
+        str_contains(outcome_string, 'travel_time') ||
+        str_contains(outcome_string, 'gini')) {
+      low_color <- 'green'
+      high_color <- 'red'
+    }
+    p <- ggplot(longData, aes(x = X1, y = X2)) +
+      geom_raster(aes(fill = value), show.legend = FALSE) +
+      geom_text(aes(label = round(value, 4))) +
+      scale_fill_gradient2(
+        low = low_color,
+        mid = "white",
+        high = high_color,
+        midpoint = 0
+      ) +
+      labs(x = "Best increase in p(cross_exposure) for category:",
+           y = sprintf("Resulting %s for category: ", outcome_string),) +
+      theme_bw() + theme(
+        axis.text.x = element_text(
+          size = 9,
+          angle = 0,
+          vjust = 0.3
+        ),
+        axis.text.y = element_text(size = 9),
+        plot.title = element_text(size = 11)
+      )
+    
+    return (p)
+  }
+```

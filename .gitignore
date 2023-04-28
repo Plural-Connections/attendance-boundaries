@@ -1,4 +1,5 @@
 data/
+paper_results/
 cms/solver_files/
 cms/results/
 *__pycache__*

@@ -1,0 +1,2 @@
+The maximum amount more a child should have to travel to school as a
+result of a rezoning (expressed as a percent of their current travel time)

@@ -1,0 +1,3 @@
+The attendance boundaries produced by the program depend on which
+students you are most interested in increasing the probability of
+diverse exposures for.  

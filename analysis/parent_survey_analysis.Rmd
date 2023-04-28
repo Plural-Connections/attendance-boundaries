@@ -1,0 +1,522 @@
+---
+title: "School rezoning project: parent survey"
+output:
+  html_document: default
+  pdf_document: default
+---
+  
+# Overview
+
+```{r message=FALSE, warning=FALSE}
+
+library(MASS)
+library(jtools)
+library(dplyr)
+library(tidyverse)
+library(texreg)
+library(nnet)
+library(ggplot2)
+library(knitr)
+library(patchwork)
+library(stringr)
+library(grattantheme)
+opts_chunk$set(fig.width=12, fig.height = 12, tidy.opts=list(width.cutoff=80),tidy=TRUE)
+```
+
+### Load, parse, and reformat data
+```{r message=FALSE, warning=FALSE}
+df_survey <- read.csv('../data/survey_data/School+diversity+parent+survey+3_January+6,+2022_19.59.csv')
+df_id_to_q <- data.frame(id = as.character(names(df_survey)), q = as.character(df_survey[1,]))
+
+# Parse out pre-treatment covariates
+df_survey <- df_survey[-c(1),]
+df_survey$diversity_category <- relevel(factor(df_survey$diversity_category), ref='racial or ethnic')
+df_survey$diversity_percent_increase <- as.numeric(df_survey$diversity_percent_increase)
+df_survey$racial_diversity_imp <- relevel(factor(df_survey$Q36_1, levels=c('Strongly agree', 'Agree', 'Neutral', 'Disagree', 'Strongly disagree')), ref="Neutral")
+df_survey$economic_diversity_imp <- relevel(factor(df_survey$Q36_2, levels=c('Strongly agree', 'Agree', 'Neutral', 'Disagree', 'Strongly disagree')), ref="Neutral")
+df_survey$intellectual_diversity_imp <- relevel(factor(df_survey$Q36_3, levels=c('Strongly agree', 'Agree', 'Neutral', 'Disagree', 'Strongly disagree')), ref="Neutral")
+df_survey$school_improvement <- relevel(factor(df_survey$Q27, levels=c('Strongly agree', 'Agree', 'Neutral', 'Disagree', 'Strongly disagree')), ref="Neutral")
+df_survey$num_kids_in_class <- as.numeric(df_survey$Q32)
+df_survey$transport_type <- relevel(factor(df_survey$Q33), ref="Car")
+df_survey$travel_time <- as.numeric(df_survey$Q35)
+df_survey$diversity_imp_bc_empathy <- grepl("Helps them develop more compassion and empathy for others", df_survey$Q38)
+df_survey$diversity_imp_bc_crit_thinking <- grepl("Helps them think in more critical and nuanced ways", df_survey$Q38)
+df_survey$diversity_imp_bc_creative <- grepl("Helps them be more creative in solving problems", df_survey$Q38)
+df_survey$diversity_imp_bc_diff_persp <- grepl("Helps them to approach issues from different perspectives", df_survey$Q38)
+df_survey$diversity_imp_bc_jobs <- grepl("jobs", df_survey$Q38)
+df_survey$diversity_imp_bc_none <- grepl("None of these", df_survey$Q38)
+df_survey$diversity_imp_bc_idk <- grepl("I'm not really sure", df_survey$Q38)
+
+df_survey$friends_next_door <- grepl("Next door neighbors / those in the same complex as me", df_survey$Q27.1)
+df_survey$friends_live_on_street <- grepl("Others who live on my street", df_survey$Q27.1)
+df_survey$friends_nearby <- grepl("Others who live nearby, but not directly on my street", df_survey$Q27.1)
+df_survey$friends_other_neighborhoods <- grepl("Others who live in different neighborhoods", df_survey$Q27.1)
+
+# Parse out outcome measures
+df_survey$travel_increase <- as.numeric(df_survey$Q27_1)
+df_survey$travel_increase_ratio <- df_survey$travel_increase / df_survey$travel_time
+df_survey$class_size_increase <- as.numeric(df_survey$Q28_1)
+df_survey$class_size_increase_ratio <- df_survey$class_size_increase / df_survey$num_kids_in_class
+df_survey$percent_rezoned_together <- as.numeric(df_survey$Q29_1)
+df_survey$support_rezoning <- relevel(factor(df_survey$Q28), ref='It depends')
+
+# Parse post-treatment covariates
+df_survey$school_type <- relevel(factor(df_survey$Q56), ref='Public, non-charter')
+df_survey$district_type <- relevel(factor(df_survey$Q31), ref='Suburban school district')
+df_survey$Q51[df_survey$Q51 == "Kindergarten" || df_survey$Q51 == "Pre-K"] <- '0'
+df_survey$child_grade_level <- as.numeric(df_survey$Q51)
+df_survey$child_academics <- relevel(factor(df_survey$Q28.1), ref='Average academic performance')
+df_survey$child_frl <- relevel(factor(df_survey$Q39), ref='No')
+df_survey$child_ell <- relevel(factor(df_survey$Q40), ref='No')
+df_survey$race_ethnicity_white <- grepl("White", df_survey$Q38.1)
+df_survey$race_ethnicity_black <- grepl("Black or African American", df_survey$Q38.1)
+df_survey$race_ethnicity_hisp <- grepl("Hispanic / Latinx", df_survey$Q38.1)
+df_survey$race_ethnicity_asian <- grepl("Asian", df_survey$Q38.1)
+df_survey$race_ethnicity_native <- grepl("American Indian and Alaska Native", df_survey$Q38.1)
+df_survey$school_assignment_neighborhood <- grepl("Based on the neighborhood we live in", df_survey$Q27.2)
+df_survey$school_assignment_choice <- grepl("Based on a school choice process where we rank our preferences for schools", df_survey$Q27.2)
+df_survey$school_assignment_lottery <- grepl("Based on a lottery system", df_survey$Q27.2)
+df_survey$school_assignment_exam <- grepl("Based on an examination or application process", df_survey$Q27.2)
+df_survey$ideology <- relevel(factor(df_survey$Q54), ref="Independent")
+df_survey$affective_polarization <- 10 - as.numeric(df_survey$Q29.1_1)
+
+# Filter out surveys that took less than 60 seconds
+df_survey <- df_survey %>% filter(as.numeric(df_survey$Duration..in.seconds) > 60)
+```
+
+```{r message=FALSE, warning=FALSE}
+get_bar_chart <- function(
+  df_survey,
+  x,
+  title=''
+){
+  
+  curr_plot <- df_survey %>%
+    group_by_at(x) %>%
+    summarize(
+      n = n()
+    ) %>%
+    mutate(
+      n = round(n / sum(n), 3) * 100
+    ) %>%
+    ggplot(aes_string(
+      x = x,
+      y = 'n'
+    )) +
+    geom_bar(position = "dodge", stat = "identity") + 
+    labs(title = title, x='', y = '% respondents') + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  
+  return (curr_plot) 
+
+}
+
+get_histogram <- function(
+  df_survey,
+  x,
+  title=''
+){
+
+  curr_plot <- df_survey %>%
+    ggplot(aes_string(x)) + 
+    geom_histogram() +
+    annotate(
+      "text",
+      x=Inf, 
+      y = Inf,
+      vjust=1, 
+      hjust=1,
+      label = sprintf("Median: %s", round(median(df_survey[[x]], na.rm=T), 2)),
+      size=3
+    ) +
+    labs(title = title, 40) + 
+    xlab('') +
+    ylab('# respondents') +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  
+  return (curr_plot)
+}
+```
+
+## Exploratory analyses
+
+### Beliefs
+```{r message=FALSE, warning=FALSE}
+racial_diversity_imp_barplot <- get_bar_chart(df_survey, 'racial_diversity_imp', title='I believe it’s important for my child to be \nexposed to a racially and/or culturally \ndiverse set of other students at school')
+economic_diversity_imp_barplot <- get_bar_chart(df_survey, 'economic_diversity_imp', title='I believe it’s important for my child to be \nexposed to an economically diverse \nset of other students at school')
+intellectual_diversity_imp_barplot <- get_bar_chart(df_survey, 'intellectual_diversity_imp', title='I believe it’s important for my child to be \nexposed to an intellectually diverse \nset of students (i.e., students who\nhave different ways of thinking and \nlearning)')
+
+wrap_plots(racial_diversity_imp_barplot, economic_diversity_imp_barplot, intellectual_diversity_imp_barplot)
+```
+
+### Which of the following, if any, would you describe as the benefits to your child of being exposed to a diverse body of students? Please select any that apply.
+```{r message=FALSE, warning=FALSE}
+school_assignment_neighborhood_barplot <- get_bar_chart(df_survey, 'school_assignment_neighborhood', title="Based on the neighborhood we live in")
+school_assignment_choice_barplot <- get_bar_chart(df_survey, 'school_assignment_choice', title="Based on a school choice process where we rank our preferences\nfor schools")
+school_assignment_lottery_barplot<- get_bar_chart(df_survey, 'school_assignment_lottery', title="Based on a lottery system")
+school_assignment_exam_barplot <- get_bar_chart(df_survey, 'school_assignment_exam', title="Based on an examination or application process")
+
+
+wrap_plots(school_assignment_neighborhood_barplot, school_assignment_choice_barplot, school_assignment_lottery_barplot, school_assignment_exam_barplot)
+```
+
+### How does your kid get assigned to schools
+```{r message=FALSE, warning=FALSE}
+diversity_imp_bc_empathy_barplot <- get_bar_chart(df_survey, 'diversity_imp_bc_empathy', title="Helps them develop more compassion\nand empathy for others")
+diversity_imp_bc_crit_thinking_barplot <- get_bar_chart(df_survey, 'diversity_imp_bc_crit_thinking', title="Helps them think in more critical and\nnuanced ways")
+diversity_imp_bc_creative_barplot <- get_bar_chart(df_survey, 'diversity_imp_bc_creative', title="Helps them be more creative in solving\nproblems")
+diversity_imp_bc_diff_persp_barplot <- get_bar_chart(df_survey, 'diversity_imp_bc_diff_persp', title="Helps them to approach issues from\ndifferent perspectives")
+diversity_imp_bc_jobs_barplot <- get_bar_chart(df_survey, 'diversity_imp_bc_jobs', title="Prepares them to participate more\neffectively in future activities (e.g. jobs)")
+diversity_imp_bc_none_barplot <- get_bar_chart(df_survey, 'diversity_imp_bc_none', title="None of these")
+diversity_imp_bc_idk_barplot <- get_bar_chart(df_survey, 'diversity_imp_bc_idk', title="I'm not really sure")
+
+wrap_plots(diversity_imp_bc_empathy_barplot, diversity_imp_bc_crit_thinking_barplot, diversity_imp_bc_creative_barplot, diversity_imp_bc_diff_persp_barplot, diversity_imp_bc_jobs_barplot, diversity_imp_bc_none_barplot, diversity_imp_bc_idk_barplot)
+```
+
+### About child's school
+```{r message=FALSE, warning=FALSE}
+num_kids_histogram <- get_histogram(df_survey, 'num_kids_in_class', title='On average, approximately how many\nstudents are in each of your child\'s \nclasses?')
+travel_time_histogram <- get_histogram(df_survey, 'travel_time', title='Approximately how long (in minutes)\ndoes it take your child to get\nto school every morning?')
+transport_type_barplot <- get_bar_chart(df_survey, 'transport_type', title='How does your child get to school\nevery morning?')
+school_improvement_barplot <- get_bar_chart(df_survey, 'school_improvement', title='I believe parents and students \ncan effectively partner with \nteachers and administrators to improve \nlower-performing schools')
+wrap_plots(num_kids_histogram, travel_time_histogram, transport_type_barplot, school_improvement_barplot)
+```
+
+### Other info about child / family
+```{r message=FALSE, warning=FALSE}
+school_type_barplot <- get_bar_chart(df_survey, 'school_type', title='What type of school does your youngest\nchild attend?')
+district_type_barplot <- get_bar_chart(df_survey, 'district_type', title='How would you describe your school \ndistrict?')
+grade_level_histogram <- get_histogram(df_survey, 'child_grade_level', title='Your youngest child\'s grade level')
+child_academics_barplot <- get_bar_chart(df_survey, 'child_academics', title='How would you describe your youngest\nchild\'s academic standing?')
+frl_barplot <- get_bar_chart(df_survey, 'child_frl', title='Is your youngest child eligible for free\nor reduced lunch?')
+ell_barplot <- get_bar_chart(df_survey, 'child_ell', title='Is your youngest child enrolled in an\nEnglish language learning program?')
+ideology_barplot <- get_bar_chart(df_survey, 'ideology', title='Political ideology')
+affective_polarization_histogram <- get_histogram(df_survey, 'affective_polarization', title='On a scale from 1 (very cold), to 10\n(very warm), how do you feel about\nmembers of political parties whose views\ndiffer from yours?')
+
+wrap_plots(school_type_barplot, district_type_barplot, grade_level_histogram, child_academics_barplot, frl_barplot, ell_barplot, ideology_barplot, affective_polarization_histogram)
+```
+
+### Which of the following groups does your child hang out / spend time with regularly?  Please select any that apply.
+```{r message=FALSE, warning=FALSE}
+friends_next_door_barplot <- get_bar_chart(df_survey, 'friends_next_door', title="Next door neighbors / those in the same complex as me")
+friends_live_on_street_barplot <- get_bar_chart(df_survey, 'friends_live_on_street', title="Others who live on my street")
+friends_nearby_barplot <- get_bar_chart(df_survey, 'friends_nearby', title="Others who live nearby, but not directly on my street")
+friends_other_neighborhoods_barplot <- get_bar_chart(df_survey, 'friends_other_neighborhoods', title="Others who live in different neighborhoods")
+
+wrap_plots(friends_next_door_barplot, friends_live_on_street_barplot, friends_nearby_barplot, friends_other_neighborhoods_barplot)
+```
+
+### What is your youngest child's racial / ethnic background?  Please select any that apply.
+```{r message=FALSE, warning=FALSE}
+race_ethnicity_black_barplot <- get_bar_chart(df_survey, 'race_ethnicity_black', title="Black or African American")
+race_ethnicity_white_barplot <- get_bar_chart(df_survey, 'race_ethnicity_white', title="White")
+race_ethnicity_hisp_barplot <- get_bar_chart(df_survey, 'race_ethnicity_hisp', title="Hispanic / Latinx")
+race_ethnicity_asian_barplot <- get_bar_chart(df_survey, 'race_ethnicity_asian', title="Asian")
+race_ethnicity_native_barplot <- get_bar_chart(df_survey, 'race_ethnicity_native', title="American Indian and Alaska Native")
+
+wrap_plots(race_ethnicity_black_barplot, race_ethnicity_white_barplot, race_ethnicity_hisp_barplot, race_ethnicity_asian_barplot, race_ethnicity_native_barplot)
+```
+
+### histograms / barplots of outcome measures
+```{r message=FALSE, warning=FALSE}
+travel_increase_histogram <- get_histogram(df_survey, 'travel_increase', title='How much further (in minutes) would you be willing \nto travel to school for more diversity?')
+class_size_increase_histogram <- get_histogram(df_survey, 'class_size_increase', title='How many more students in your child\'s class would you be ok\nwith for more diversity?')
+percent_rezoned_together_histogram <- get_histogram(df_survey, 'percent_rezoned_together', title='What % of your neighbors would you be ok with being rezoned\nto a different school?')
+support_rezoning_barplot <- get_bar_chart(df_survey, 'support_rezoning', title='Let\'s say that the school zones in your district were changed, and\nyour child now had to attend a different school.  Would you send\nyour child to this new school?')
+wrap_plots(travel_increase_histogram, class_size_increase_histogram, percent_rezoned_together_histogram, support_rezoning_barplot)
+```
+### histograms / barplots of outcome measures - ratios of responses to corresponding pre-treatment covariates
+```{r message=FALSE, warning=FALSE}
+travel_increase_ratio_histogram <- get_histogram(df_survey, 'travel_increase_ratio', title='How much further would you be willing to travel\nto school for more diversity?')
+class_size_increase_ratio_histogram <- get_histogram(df_survey, 'class_size_increase_ratio', title='How many more students in your child\'s class would you be \nok withfor more diversity?')
+wrap_plots(travel_increase_ratio_histogram, class_size_increase_ratio_histogram)
+```
+
+## Regression outputs
+
+The shape indicates the estimated correlation ("effect size") of a given variable on a given outcome measure, after controlling for all other depicted variables (note, "effect" is used loosely here ... there isn't necessarily a causal relationship, except with the diversity_category and diversity_percent_increase variables, which were randomly assigned).  The line through the shape is the 95% confidence interval for the estimate.  When the estimate is negative, that means there's a negative relationship between that corresponding variable and the outcome measure; positive implies a positive relationship.  "Significant" relationships are those where the 95% confidence intervals do not go through 0.
+
+### Standardize continuous variables before running regressions
+```{r message=FALSE, warning=FALSE}
+df_reg <- df_survey %>%
+   mutate_at(c('diversity_percent_increase', 'travel_time', 'num_kids_in_class', 'travel_increase', 'travel_increase_ratio', 'class_size_increase', 'class_size_increase_ratio', 'percent_rezoned_together'), funs(c(scale(.))))
+df_reg$accept_rezoning <- df_reg$support_rezoning == "Yes"
+df_reg$accept_rezoning_depends <- df_reg$support_rezoning == "It depends"
+```
+
+### Any treatment effects of randomly varying diversity_category (academic, income, racial/cultural) and diversity_percent_increase (10%, 25%) — no covariates; the first two outcome measures equal ratios of response to original travel time/class size
+```{r message=FALSE, warning=FALSE}
+
+m_travel <- summary(lm(travel_increase_ratio ~ diversity_category + diversity_percent_increase, data=df_reg))
+m_class_size <- summary(lm(class_size_increase_ratio ~ diversity_category + diversity_percent_increase, data=df_reg))
+m_rezoned_together <- summary(lm(percent_rezoned_together ~ diversity_category + diversity_percent_increase, data=df_reg))
+m_accept_rezoning <- glm(accept_rezoning ~ diversity_category + diversity_percent_increase, data=df_reg, family=binomial(link = 'logit'))
+
+plot_summs(
+  m_travel,
+  m_class_size,
+  m_rezoned_together,
+  m_accept_rezoning,
+  model.names = c(
+    sprintf(
+      'Travel increase (adj R^2: %s)',
+      round(m_travel$adj.r.squared, 2)
+    ),
+    sprintf(
+      'Class size increase (adj R^2: %s)',
+      round(m_class_size$adj.r.squared, 2)
+    ),
+    sprintf(
+      '%% neighbors that can be rezoned elsewhere\n (adj R^2: %s)',
+      round(m_rezoned_together$adj.r.squared, 2)
+    ),
+    'Accept rezoning?'
+  ),
+   coefs = c(
+     'Diversity category: Academic' = 'diversity_categoryacademic achievement',
+     'Diversity category: Income' = 'diversity_categoryincome',
+     '% Diversity increase' = 'diversity_percent_increase'
+   )
+)
+
+```
+
+### Regressing outcomes on covariates — student race / ethnicity / frl / ell
+```{r message=FALSE, warning=FALSE}
+m_travel <- summary(lm(travel_increase_ratio ~ child_ell + child_frl + race_ethnicity_black + race_ethnicity_white + race_ethnicity_hisp + race_ethnicity_asian + race_ethnicity_native, data=df_reg))
+
+m_class_size <- summary(lm(class_size_increase_ratio ~ child_ell + child_frl + race_ethnicity_black + race_ethnicity_white + race_ethnicity_hisp + race_ethnicity_asian + race_ethnicity_native, data=df_reg))
+
+m_rezoned_together <- summary(lm(percent_rezoned_together ~ child_ell + child_frl + race_ethnicity_black + race_ethnicity_white + race_ethnicity_hisp + race_ethnicity_asian + race_ethnicity_native, data=df_reg))
+
+plot_summs(
+  m_travel,
+  m_class_size,
+  m_rezoned_together,
+  model.names = c(
+    sprintf(
+      'Travel increase (adj R^2: %s)',
+      round(m_travel$adj.r.squared, 2)
+    ),
+    sprintf(
+      'Class size increase (adj R^2: %s)',
+      round(m_class_size$adj.r.squared, 2)
+    ),
+    sprintf(
+      '%% neighbors that can be rezoned elsewhere\n (adj R^2: %s)',
+      round(m_rezoned_together$adj.r.squared, 2)
+    )
+  )
+)
+
+```
+
+### Regressing outcomes on covariates — school and district type
+```{r message=FALSE, warning=FALSE}
+m_travel <- summary(lm(travel_increase_ratio ~ school_type + district_type, data=df_reg))
+
+m_class_size <- summary(lm(class_size_increase_ratio ~ school_type + district_type, data=df_reg))
+
+m_rezoned_together <- summary(lm(percent_rezoned_together ~ school_type + district_type, data=df_reg))
+
+plot_summs(
+  m_travel,
+  m_class_size,
+  m_rezoned_together,
+  model.names = c(
+    sprintf(
+      'Travel increase (adj R^2: %s)',
+      round(m_travel$adj.r.squared, 2)
+    ),
+    sprintf(
+      'Class size increase (adj R^2: %s)',
+      round(m_class_size$adj.r.squared, 2)
+    ),
+    sprintf(
+      '%% neighbors that can be rezoned elsewhere\n (adj R^2: %s)',
+      round(m_rezoned_together$adj.r.squared, 2)
+    )
+  )
+)
+
+```
+
+### Regressing outcomes on covariates — school and district type
+```{r message=FALSE, warning=FALSE}
+m_travel <- summary(lm(travel_increase_ratio ~ school_type + district_type, data=df_reg))
+
+m_class_size <- summary(lm(class_size_increase_ratio ~ school_type + district_type, data=df_reg))
+
+m_rezoned_together <- summary(lm(percent_rezoned_together ~ school_type + district_type, data=df_reg))
+
+plot_summs(
+  m_travel,
+  m_class_size,
+  m_rezoned_together,
+  model.names = c(
+    sprintf(
+      'Travel increase (adj R^2: %s)',
+      round(m_travel$adj.r.squared, 2)
+    ),
+    sprintf(
+      'Class size increase (adj R^2: %s)',
+      round(m_class_size$adj.r.squared, 2)
+    ),
+    sprintf(
+      '%% neighbors that can be rezoned elsewhere\n (adj R^2: %s)',
+      round(m_rezoned_together$adj.r.squared, 2)
+    )
+  )
+)
+
+```
+
+### Regressing outcomes on covariates — beliefs about diversity
+```{r message=FALSE, warning=FALSE}
+m_travel <- summary(lm(travel_increase_ratio ~ racial_diversity_imp + economic_diversity_imp + intellectual_diversity_imp + diversity_imp_bc_empathy + diversity_imp_bc_crit_thinking + diversity_imp_bc_creative + diversity_imp_bc_diff_persp + diversity_imp_bc_jobs, data=df_reg))
+
+m_class_size <- summary(lm(class_size_increase_ratio ~ racial_diversity_imp + economic_diversity_imp + intellectual_diversity_imp + diversity_imp_bc_empathy + diversity_imp_bc_crit_thinking + diversity_imp_bc_creative + diversity_imp_bc_diff_persp + diversity_imp_bc_jobs, data=df_reg))
+
+m_rezoned_together <- summary(lm(percent_rezoned_together ~ racial_diversity_imp + economic_diversity_imp + intellectual_diversity_imp + diversity_imp_bc_empathy + diversity_imp_bc_crit_thinking + diversity_imp_bc_creative + diversity_imp_bc_diff_persp + diversity_imp_bc_jobs, data=df_reg))
+
+plot_summs(
+  m_travel,
+  m_class_size,
+  m_rezoned_together,
+  model.names = c(
+    sprintf(
+      'Travel increase (adj R^2: %s)',
+      round(m_travel$adj.r.squared, 2)
+    ),
+    sprintf(
+      'Class size increase (adj R^2: %s)',
+      round(m_class_size$adj.r.squared, 2)
+    ),
+    sprintf(
+      '%% neighbors that can be rezoned elsewhere\n (adj R^2: %s)',
+      round(m_rezoned_together$adj.r.squared, 2)
+    )
+  )
+)
+
+```
+
+### Regressing outcomes on covariates — kids' current experiences
+```{r message=FALSE, warning=FALSE}
+m_travel <- summary(lm(travel_increase_ratio ~ travel_time + num_kids_in_class + transport_type + friends_next_door + friends_live_on_street + child_grade_level + child_academics, data=df_reg))
+
+m_class_size <- summary(lm(class_size_increase_ratio ~ travel_time + num_kids_in_class + transport_type + friends_next_door + friends_live_on_street + child_grade_level + child_academics, data=df_reg))
+
+m_rezoned_together <- summary(lm(percent_rezoned_together ~ travel_time + num_kids_in_class + transport_type + friends_next_door + friends_live_on_street + child_grade_level + child_academics, data=df_reg))
+
+plot_summs(
+  m_travel,
+  m_class_size,
+  m_rezoned_together,
+  model.names = c(
+    sprintf(
+      'Travel increase (adj R^2: %s)',
+      round(m_travel$adj.r.squared, 2)
+    ),
+    sprintf(
+      'Class size increase (adj R^2: %s)',
+      round(m_class_size$adj.r.squared, 2)
+    ),
+    sprintf(
+      '%% neighbors that can be rezoned elsewhere\n (adj R^2: %s)',
+      round(m_rezoned_together$adj.r.squared, 2)
+    )
+  )
+)
+
+```
+
+### Regressing outcomes on covariates — political ideology
+```{r message=FALSE, warning=FALSE}
+m_travel <- summary(lm(travel_increase_ratio ~ ideology + affective_polarization, data=df_reg))
+
+m_class_size <- summary(lm(class_size_increase_ratio ~ ideology + affective_polarization, data=df_reg))
+
+m_rezoned_together <- summary(lm(percent_rezoned_together ~ ideology + affective_polarization, data=df_reg))
+
+plot_summs(
+  m_travel,
+  m_class_size,
+  m_rezoned_together,
+  model.names = c(
+    sprintf(
+      'Travel increase (adj R^2: %s)',
+      round(m_travel$adj.r.squared, 2)
+    ),
+    sprintf(
+      'Class size increase (adj R^2: %s)',
+      round(m_class_size$adj.r.squared, 2)
+    ),
+    sprintf(
+      '%% neighbors that can be rezoned elsewhere\n (adj R^2: %s)',
+      round(m_rezoned_together$adj.r.squared, 2)
+    )
+  )
+)
+
+```
+
+### Regressing outcomes on covariates — attitudes towards school improvement
+```{r message=FALSE, warning=FALSE}
+m_travel <- summary(lm(travel_increase_ratio ~ school_improvement, data=df_reg))
+
+m_class_size <- summary(lm(class_size_increase_ratio ~ school_improvement, data=df_reg))
+
+m_rezoned_together <- summary(lm(percent_rezoned_together ~ school_improvement, data=df_reg))
+
+plot_summs(
+  m_travel,
+  m_class_size,
+  m_rezoned_together,
+  model.names = c(
+    sprintf(
+      'Travel increase (adj R^2: %s)',
+      round(m_travel$adj.r.squared, 2)
+    ),
+    sprintf(
+      'Class size increase (adj R^2: %s)',
+      round(m_class_size$adj.r.squared, 2)
+    ),
+    sprintf(
+      '%% neighbors that can be rezoned elsewhere\n (adj R^2: %s)',
+      round(m_rezoned_together$adj.r.squared, 2)
+    )
+  )
+)
+
+```
+
+### Regressing outcome on treatment and covariates - full model (no interactions)
+```{r, fig.height = 20,message=FALSE, warning=FALSE}
+m_travel <- summary(lm(travel_increase_ratio ~ diversity_category + diversity_percent_increase + travel_time + num_kids_in_class + transport_type + racial_diversity_imp + economic_diversity_imp + intellectual_diversity_imp + diversity_imp_bc_empathy + diversity_imp_bc_crit_thinking + diversity_imp_bc_creative + diversity_imp_bc_diff_persp + diversity_imp_bc_jobs + ideology + friends_next_door + friends_live_on_street + child_grade_level + child_ell + child_frl + race_ethnicity_black + race_ethnicity_white + race_ethnicity_hisp + race_ethnicity_asian + race_ethnicity_native + child_academics + school_type + district_type + affective_polarization + school_improvement, data=df_reg))
+
+m_class_size <- summary(lm(class_size_increase_ratio ~ diversity_category + diversity_percent_increase + travel_time + num_kids_in_class + transport_type + racial_diversity_imp + economic_diversity_imp + intellectual_diversity_imp + diversity_imp_bc_empathy + diversity_imp_bc_crit_thinking + diversity_imp_bc_creative + diversity_imp_bc_diff_persp + diversity_imp_bc_jobs + ideology + friends_next_door + friends_live_on_street + child_grade_level + child_ell + child_frl  + race_ethnicity_black + race_ethnicity_white + race_ethnicity_hisp + race_ethnicity_asian + race_ethnicity_native + child_academics + school_type + district_type + affective_polarization + school_improvement, data=df_reg))
+
+m_rezoned_together <- summary(lm(percent_rezoned_together ~ diversity_category + diversity_percent_increase + travel_time + num_kids_in_class + transport_type + racial_diversity_imp + economic_diversity_imp + intellectual_diversity_imp + diversity_imp_bc_empathy + diversity_imp_bc_crit_thinking + diversity_imp_bc_creative + diversity_imp_bc_diff_persp + diversity_imp_bc_jobs + ideology + friends_next_door + friends_live_on_street + child_grade_level + child_ell + child_frl  + race_ethnicity_black + race_ethnicity_white + race_ethnicity_hisp + race_ethnicity_asian + race_ethnicity_native + child_academics + school_type + district_type + affective_polarization + school_improvement, data=df_reg))
+
+plot_summs(
+  m_travel,
+  m_class_size,
+  m_rezoned_together,
+  model.names = c(
+    sprintf(
+      'Travel increase (adj R^2: %s)',
+      round(m_travel$adj.r.squared, 2)
+    ),
+    sprintf(
+      'Class size increase (adj R^2: %s)',
+      round(m_class_size$adj.r.squared, 2)
+    ),
+    sprintf(
+      '%% neighbors that can be rezoned elsewhere\n (adj R^2: %s)',
+      round(m_rezoned_together$adj.r.squared, 2)
+    )
+  )
+)
+
+```

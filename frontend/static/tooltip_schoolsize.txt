@@ -1,0 +1,2 @@
+The maximum amount of additional students that can be zoned to a given
+school, expressed as a percentage of the school's current population.
