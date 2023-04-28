@@ -1,7 +1,14 @@
 # Repository for "Redrawing attendance boundaries to promote racial and ethnic diversity in elementary schools"
 
+<div id="refs" class="references csl-bib-body hanging-indent">
+
+<div id="ref-xie2018" class="csl-entry">
+
+Nabeel Gillani, Doug Beeferman, Christine Vega-Pourheydarian, Cassandra Overney, Pascal Van Hentenryck, Deb Roy. *Redrawing attendance boundaries to promote racial and ethnic diversity in elementary schools*. Forthcoming in Educational Researcher.
+<https://www.ssrn.com/abstract=4387899>.
+
+</div>
+
+</div>
+
 Details about data and code forthcoming.
-
-[Main text](https://drive.google.com/file/d/1rBl3naH550dWfgJrdkXdpr3a1yvY3P1e/view?usp=share_link)
-
-[Supplementary materials](https://drive.google.com/file/d/1OCV9fnv3m7jNMlwfPA8Mfi0s7BD5qtJN/view?usp=share_link)
