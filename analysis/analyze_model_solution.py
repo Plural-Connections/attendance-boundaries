@@ -880,7 +880,7 @@ def process_district_results(
 
 
 def output_csv_for_exploratory_analyses(
-    solution_dir="simulation_outputs/2122_shaker_heights_expanded/{}",
+    solution_dir="models/results/{}",
     pre_solver_file="models/solver_files/{}/{}/prepped_file_for_solver_{}.csv",
     travel_time_matrix_file="models/solver_files/{}/{}/prepped_travel_time_matrix_{}.csv",
     year="2122",

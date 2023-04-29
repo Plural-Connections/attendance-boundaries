@@ -532,9 +532,6 @@ def solve_and_output_results(
     input_file_schools="data/derived_data/{}/{}/schools_file_for_assignment.csv",
     input_file_blocks="data/derived_data/{}/{}/blocks_file_for_assignment.csv",
 ):
-    # Districts:
-    # # 1302280  # 1301740  # 5300390  #5103640
-    # 5100810, 5102640, 5101800  -- with nan
 
     # Create the cp model
     model = cp_model.CpModel()
@@ -626,7 +623,6 @@ def solve_and_output_results(
             objective_function,
             percent_neighbors_rezoned_together,
             "True" if enforce_contiguity else "False",
-            s3_output_dir="s3://rezoning-schools/results/2122_shaker_heights_expanded/{}/{}/{}/{}_{}_{}_{}_{}_{}/",
         )
 
         if objective_type == "dissimilarity":
